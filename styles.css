@@ -109,8 +109,9 @@ body {
 .preview-wrap img {
   width: 64px;
   height: 64px;
-  object-fit: cover;
-  image-rendering: pixelated;
+  object-fit: contain;
+  display: block;
+  background: #fff;
 }
 
 .resource-title {

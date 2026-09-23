@@ -61,7 +61,6 @@ const MIME_TO_EXT = {
 
 const app = express();
 app.use(express.json({ limit: "256kb" }));
-app.use(express.static(ROOT));
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -282,12 +281,45 @@ app.delete("/api/resources/:id", requireAdmin, async (req, res) => {
   }
 });
 
+app.use(
+  "/assets",
+  express.static(path.join(ROOT, "assets"), {
+    fallthrough: false,
+    setHeaders(res, filePath) {
+      if (filePath.endsWith(".svg")) {
+        res.setHeader("Content-Type", "image/svg+xml; charset=utf-8");
+      }
+    },
+  }),
+);
+app.use("/details", express.static(path.join(ROOT, "details")));
+app.get(["/", "/index.html"], (_req, res) => {
+  res.sendFile(path.join(ROOT, "index.html"));
+});
+app.get("/styles.css", (_req, res) => {
+  res.sendFile(path.join(ROOT, "styles.css"));
+});
+app.get("/app.js", (_req, res) => {
+  res.sendFile(path.join(ROOT, "app.js"));
+});
+
 ensureUploadsDir()
   .then(() => ensureResourcesFile())
   .then(() => {
-    app.listen(PORT, HOST, () => {
-      console.log(`Wiki: http://${HOST}:${PORT}`);
-      console.log(`Админ-пароль задаётся через ADMIN_PASSWORD (сейчас длина: ${ADMIN_PASSWORD.length})`);
+    const server = app.listen(PORT, HOST, () => {
+      console.log(`Сервер запущен`);
+      console.log(`  локально:  http://127.0.0.1:${PORT}`);
+      console.log(`  по сети:   http://<IP-машины>:${PORT}`);
+      console.log(`  слушает:   ${HOST}:${PORT}`);
+    });
+
+    server.on("error", (error) => {
+      if (error && error.code === "EADDRINUSE") {
+        console.error(`Порт ${PORT} уже занят. Остановите другой процесс или задайте PORT в .env`);
+      } else {
+        console.error("Ошибка запуска сервера:", error);
+      }
+      process.exit(1);
     });
   })
   .catch((error) => {

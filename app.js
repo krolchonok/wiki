@@ -44,6 +44,17 @@ async function parseJsonResponse(response) {
   return data;
 }
 
+function previewUrl(preview) {
+  const value = String(preview || "assets/wiki.svg").trim();
+  if (!value) {
+    return "/assets/wiki.svg";
+  }
+  if (/^https?:\/\//i.test(value) || value.startsWith("data:")) {
+    return value;
+  }
+  return `/${value.replace(/^\/+/, "")}`;
+}
+
 function createCard(resource) {
   const card = document.createElement("article");
   card.className = "resource-card";
@@ -52,8 +63,15 @@ function createCard(resource) {
   previewWrap.className = "preview-wrap";
 
   const img = document.createElement("img");
-  img.src = resource.preview;
+  img.src = previewUrl(resource.preview);
   img.alt = `Превью: ${resource.title}`;
+  img.loading = "lazy";
+  img.addEventListener("error", () => {
+    if (!img.dataset.fallback) {
+      img.dataset.fallback = "1";
+      img.src = "/assets/wiki.svg";
+    }
+  });
   previewWrap.appendChild(img);
 
   const title = document.createElement("h2");
