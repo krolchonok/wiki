@@ -1,3 +1,4 @@
+const crypto = require("crypto");
 const express = require("express");
 const fs = require("fs");
 const fsp = require("fs/promises");
@@ -43,6 +44,8 @@ const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
 const RESOURCES_PATH = path.join(ROOT, "data", "resources.json");
 const RESOURCES_EXAMPLE_PATH = path.join(ROOT, "data", "resources.example.json");
 const UPLOADS_DIR = path.join(ROOT, "assets", "uploads");
+const ADMIN_SESSION_COOKIE = "wiki_admin_session";
+const ADMIN_SESSION_MS = 7 * 24 * 60 * 60 * 1000;
 
 if (!ADMIN_PASSWORD) {
   console.error("Задайте ADMIN_PASSWORD в файле .env (см. .env.example).");
@@ -77,9 +80,90 @@ const upload = multer({
   },
 });
 
-function requireAdmin(req, res, next) {
+function parseCookies(req) {
+  const header = req.get("cookie") || "";
+  const cookies = {};
+  for (const part of header.split(";")) {
+    const trimmed = part.trim();
+    if (!trimmed) {
+      continue;
+    }
+    const eq = trimmed.indexOf("=");
+    if (eq <= 0) {
+      continue;
+    }
+    const key = trimmed.slice(0, eq).trim();
+    const value = trimmed.slice(eq + 1).trim();
+    try {
+      cookies[key] = decodeURIComponent(value);
+    } catch {
+      cookies[key] = value;
+    }
+  }
+  return cookies;
+}
+
+function createAdminSessionToken() {
+  const expiresAt = Date.now() + ADMIN_SESSION_MS;
+  const payload = `admin.${expiresAt}`;
+  const signature = crypto.createHmac("sha256", ADMIN_PASSWORD).update(payload).digest("hex");
+  return Buffer.from(`${payload}.${signature}`).toString("base64url");
+}
+
+function isValidAdminSessionToken(token) {
+  if (!token || typeof token !== "string") {
+    return false;
+  }
+  try {
+    const raw = Buffer.from(token, "base64url").toString("utf8");
+    const parts = raw.split(".");
+    if (parts.length !== 3 || parts[0] !== "admin") {
+      return false;
+    }
+    const expiresAt = Number(parts[1]);
+    if (!Number.isFinite(expiresAt) || Date.now() > expiresAt) {
+      return false;
+    }
+    const payload = `${parts[0]}.${parts[1]}`;
+    const expected = crypto.createHmac("sha256", ADMIN_PASSWORD).update(payload).digest("hex");
+    const actual = parts[2];
+    if (expected.length !== actual.length) {
+      return false;
+    }
+    return crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(actual));
+  } catch {
+    return false;
+  }
+}
+
+function setAdminSessionCookie(res, token) {
+  const maxAgeSec = Math.floor(ADMIN_SESSION_MS / 1000);
+  const secure = process.env.COOKIE_SECURE === "1" ? "; Secure" : "";
+  res.setHeader(
+    "Set-Cookie",
+    `${ADMIN_SESSION_COOKIE}=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAgeSec}${secure}`,
+  );
+}
+
+function clearAdminSessionCookie(res) {
+  const secure = process.env.COOKIE_SECURE === "1" ? "; Secure" : "";
+  res.setHeader(
+    "Set-Cookie",
+    `${ADMIN_SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${secure}`,
+  );
+}
+
+function isAdminAuthorized(req) {
+  const cookies = parseCookies(req);
+  if (isValidAdminSessionToken(cookies[ADMIN_SESSION_COOKIE])) {
+    return true;
+  }
   const password = req.get("x-admin-password") || "";
-  if (password !== ADMIN_PASSWORD) {
+  return password === ADMIN_PASSWORD;
+}
+
+function requireAdmin(req, res, next) {
+  if (!isAdminAuthorized(req)) {
     res.status(401).json({ error: "Неверный пароль администратора." });
     return;
   }
@@ -214,12 +298,23 @@ app.get("/api/resources", async (_req, res) => {
   }
 });
 
+app.get("/api/admin/session", (req, res) => {
+  res.json({ ok: isAdminAuthorized(req) });
+});
+
 app.post("/api/admin/login", (req, res) => {
   const password = String(req.body?.password || "");
   if (password !== ADMIN_PASSWORD) {
+    clearAdminSessionCookie(res);
     res.status(401).json({ error: "Неверный пароль." });
     return;
   }
+  setAdminSessionCookie(res, createAdminSessionToken());
+  res.json({ ok: true });
+});
+
+app.post("/api/admin/logout", (_req, res) => {
+  clearAdminSessionCookie(res);
   res.json({ ok: true });
 });
 

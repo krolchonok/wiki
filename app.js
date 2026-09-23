@@ -27,7 +27,7 @@ const resourceEditIdInput = document.getElementById("resource-edit-id");
 const resourcePreviewSelect = document.getElementById("resource-preview");
 
 let allResources = [];
-let adminPassword = "";
+let adminLoggedIn = false;
 let editingId = "";
 
 function setProgress(value) {
@@ -36,19 +36,24 @@ function setProgress(value) {
   progressOuter.setAttribute("aria-valuenow", String(safeValue));
 }
 
-function adminHeaders(extra = {}) {
-  return {
-    "X-Admin-Password": adminPassword,
-    ...extra,
-  };
-}
-
 async function parseJsonResponse(response) {
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
+    if (response.status === 401) {
+      adminLoggedIn = false;
+    }
     throw new Error(data.error || `HTTP ${response.status}`);
   }
   return data;
+}
+
+async function adminFetch(url, options = {}) {
+  const headers = { ...(options.headers || {}) };
+  return fetch(url, {
+    ...options,
+    credentials: "include",
+    headers,
+  });
 }
 
 function previewUrl(preview) {
@@ -191,10 +196,21 @@ function showAdminPanel() {
   adminForm.querySelector("#resource-id")?.focus();
 }
 
-function openAdminModal() {
+async function refreshAdminSession() {
+  try {
+    const data = await parseJsonResponse(await adminFetch("/api/admin/session"));
+    adminLoggedIn = Boolean(data.ok);
+  } catch {
+    adminLoggedIn = false;
+  }
+  return adminLoggedIn;
+}
+
+async function openAdminModal() {
   adminModal.classList.add("is-open");
   adminModal.setAttribute("aria-hidden", "false");
-  if (adminPassword) {
+  await refreshAdminSession();
+  if (adminLoggedIn) {
     showAdminPanel();
   } else {
     showAdminLogin();
@@ -314,7 +330,7 @@ function renderAdminList() {
     editBtn.className = "win-btn";
     editBtn.type = "button";
     editBtn.textContent = "Изменить";
-    editBtn.disabled = !adminPassword;
+    editBtn.disabled = !adminLoggedIn;
     editBtn.addEventListener("click", () => {
       setEditMode(resource);
       renderAdminList();
@@ -324,16 +340,15 @@ function renderAdminList() {
     removeBtn.className = "win-btn";
     removeBtn.type = "button";
     removeBtn.textContent = "Удалить";
-    removeBtn.disabled = !adminPassword;
+    removeBtn.disabled = !adminLoggedIn;
     removeBtn.addEventListener("click", async () => {
       if (!window.confirm(`Удалить ресурс «${resource.title}»?`)) {
         return;
       }
       try {
         await parseJsonResponse(
-          await fetch(`/api/resources/${encodeURIComponent(resource.id)}`, {
+          await adminFetch(`/api/resources/${encodeURIComponent(resource.id)}`, {
             method: "DELETE",
-            headers: adminHeaders(),
           }),
         );
         if (editingId === resource.id) {
@@ -342,6 +357,9 @@ function renderAdminList() {
         adminFormStatus.textContent = `Удалён ресурс: ${resource.id}`;
         await loadResources({ quiet: true });
       } catch (error) {
+        if (!adminLoggedIn) {
+          showAdminLogin();
+        }
         adminFormStatus.textContent = error.message;
       }
     });
@@ -358,16 +376,17 @@ async function tryAdminLogin() {
 
   try {
     await parseJsonResponse(
-      await fetch("/api/admin/login", {
+      await adminFetch("/api/admin/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ password }),
       }),
     );
-    adminPassword = password;
+    adminLoggedIn = true;
+    adminPasswordInput.value = "";
     showAdminPanel();
   } catch {
-    adminPassword = "";
+    adminLoggedIn = false;
     adminLoginError.hidden = false;
     adminPasswordInput.focus();
   }
@@ -384,7 +403,7 @@ function slugifyId(value) {
 adminForm.addEventListener("submit", async (event) => {
   event.preventDefault();
 
-  if (!adminPassword) {
+  if (!adminLoggedIn) {
     adminFormStatus.textContent = "Сначала войдите в админ-меню.";
     return;
   }
@@ -410,9 +429,8 @@ adminForm.addEventListener("submit", async (event) => {
       : "/api/resources";
     const method = editingId ? "PUT" : "POST";
     const saved = await parseJsonResponse(
-      await fetch(endpoint, {
+      await adminFetch(endpoint, {
         method,
-        headers: adminHeaders(),
         body: formData,
       }),
     );
@@ -423,6 +441,9 @@ adminForm.addEventListener("submit", async (event) => {
       : `Добавлен ресурс: ${saved.title}`;
     await loadResources({ quiet: true });
   } catch (error) {
+    if (!adminLoggedIn) {
+      showAdminLogin();
+    }
     adminFormStatus.textContent = error.message;
   }
 });
@@ -515,3 +536,4 @@ async function loadResources({ quiet = false } = {}) {
 }
 
 loadResources().catch(() => {});
+refreshAdminSession().catch(() => {});
