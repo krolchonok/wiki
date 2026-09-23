@@ -55,9 +55,11 @@
         </section>
 
         <section id="admin-panel" class="admin-section" hidden>
-          <p class="admin-hint">Новые ресурсы сохраняются в общий <code>data/resources.json</code> на сервере и видны всем.</p>
+          <p class="admin-hint">Добавление и редактирование ресурсов. Данные пишутся в общий <code>data/resources.json</code>.</p>
 
           <form id="admin-form" class="admin-form">
+            <input id="resource-edit-id" type="hidden" value="">
+
             <label class="admin-label" for="resource-id">ID (латиница)</label>
             <input id="resource-id" class="admin-input" name="id" type="text" required pattern="[a-z0-9_-]+" placeholder="my-tool">
 
@@ -84,10 +86,12 @@
             <label class="admin-label" for="resource-details">Подробности (текст)</label>
             <textarea id="resource-details" class="admin-input admin-textarea" name="details" rows="4" placeholder="Назначение: ..."></textarea>
 
+            <p id="admin-form-mode" class="admin-hint" hidden>Режим редактирования</p>
             <p id="admin-form-status" class="admin-status" aria-live="polite"></p>
 
             <div class="admin-actions">
-              <button class="win-btn" type="submit">Добавить</button>
+              <button id="admin-submit" class="win-btn" type="submit">Добавить</button>
+              <button id="admin-cancel-edit" class="win-btn" type="button" hidden>Отмена</button>
               <button id="admin-refresh" class="win-btn" type="button">Обновить список</button>
             </div>
           </form>

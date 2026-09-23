@@ -168,6 +168,43 @@ function resolveImageExt(file) {
   return null;
 }
 
+function readResourceFields(body) {
+  const id = slugifyId(body?.id);
+  const title = String(body?.title || "").trim();
+  const description = String(body?.description || "").trim();
+  const url = String(body?.url || "").trim();
+  const preview = String(body?.preview || "assets/wiki.svg").trim();
+  const details = String(body?.details || "").trim();
+  return { id, title, description, url, preview, details };
+}
+
+function validateResourceFields({ id, title, description, url }) {
+  if (!id || !title || !description || !url) {
+    return "Заполните id, title, description и url.";
+  }
+  if (!/^https?:\/\//i.test(url)) {
+    return "URL должен начинаться с http:// или https://.";
+  }
+  return null;
+}
+
+async function saveUploadedIcon(id, file) {
+  const ext = resolveImageExt(file);
+  if (!ext) {
+    throw new Error("Неподдерживаемый формат иконки.");
+  }
+  await ensureUploadsDir();
+  const filename = `${id}${ext}`;
+  await fsp.writeFile(path.join(UPLOADS_DIR, filename), file.buffer);
+  return `assets/uploads/${filename}`;
+}
+
+async function removeUploadIfNeeded(preview) {
+  if (preview && preview.startsWith("assets/uploads/")) {
+    await fsp.unlink(path.join(ROOT, preview)).catch(() => {});
+  }
+}
+
 app.get("/api/resources", async (_req, res) => {
   try {
     const resources = await readResources();
@@ -194,52 +231,35 @@ app.post("/api/resources", requireAdmin, (req, res) => {
     }
 
     try {
-      const id = slugifyId(req.body?.id);
-      const title = String(req.body?.title || "").trim();
-      const description = String(req.body?.description || "").trim();
-      const url = String(req.body?.url || "").trim();
-      let preview = String(req.body?.preview || "assets/wiki.svg").trim();
-      const details = String(req.body?.details || "").trim();
-
-      if (!id || !title || !description || !url) {
-        res.status(400).json({ error: "Заполните id, title, description и url." });
-        return;
-      }
-
-      if (!/^https?:\/\//i.test(url)) {
-        res.status(400).json({ error: "URL должен начинаться с http:// или https://." });
+      const fields = readResourceFields(req.body);
+      const validationError = validateResourceFields(fields);
+      if (validationError) {
+        res.status(400).json({ error: validationError });
         return;
       }
 
       const resources = await readResources();
-      if (resources.some((resource) => resource.id === id)) {
-        res.status(409).json({ error: `Ресурс с id "${id}" уже существует.` });
+      if (resources.some((resource) => resource.id === fields.id)) {
+        res.status(409).json({ error: `Ресурс с id "${fields.id}" уже существует.` });
         return;
       }
 
+      let preview = fields.preview;
       if (req.file) {
-        const ext = resolveImageExt(req.file);
-        if (!ext) {
-          res.status(400).json({ error: "Неподдерживаемый формат иконки." });
-          return;
-        }
-        await ensureUploadsDir();
-        const filename = `${id}${ext}`;
-        await fsp.writeFile(path.join(UPLOADS_DIR, filename), req.file.buffer);
-        preview = `assets/uploads/${filename}`;
+        preview = await saveUploadedIcon(fields.id, req.file);
       } else if (!isSafePreview(preview)) {
         res.status(400).json({ error: "Некорректный путь превью." });
         return;
       }
 
       const resource = {
-        id,
-        title,
-        description,
-        url,
+        id: fields.id,
+        title: fields.title,
+        description: fields.description,
+        url: fields.url,
         preview,
         detailsPage: "",
-        detailsHtml: buildDetailsHtml(details),
+        detailsHtml: buildDetailsHtml(fields.details),
         custom: true,
       };
 
@@ -248,6 +268,74 @@ app.post("/api/resources", requireAdmin, (req, res) => {
       res.status(201).json(resource);
     } catch (error) {
       res.status(500).json({ error: `Не удалось сохранить ресурс: ${error.message}` });
+    }
+  });
+});
+
+app.put("/api/resources/:id", requireAdmin, (req, res) => {
+  upload.single("icon")(req, res, async (uploadError) => {
+    if (uploadError) {
+      res.status(400).json({ error: uploadError.message });
+      return;
+    }
+
+    try {
+      const currentId = slugifyId(req.params.id);
+      if (!currentId) {
+        res.status(400).json({ error: "Некорректный id." });
+        return;
+      }
+
+      const fields = readResourceFields({ ...req.body, id: currentId });
+      const validationError = validateResourceFields(fields);
+      if (validationError) {
+        res.status(400).json({ error: validationError });
+        return;
+      }
+
+      const resources = await readResources();
+      const index = resources.findIndex((resource) => resource.id === currentId);
+      if (index < 0) {
+        res.status(404).json({ error: `Ресурс "${currentId}" не найден.` });
+        return;
+      }
+
+      const existing = resources[index];
+      let preview = existing.preview || "assets/wiki.svg";
+
+      if (req.file) {
+        const nextPreview = await saveUploadedIcon(currentId, req.file);
+        if (existing.preview !== nextPreview) {
+          await removeUploadIfNeeded(existing.preview);
+        }
+        preview = nextPreview;
+      } else if (Object.prototype.hasOwnProperty.call(req.body, "preview")) {
+        const nextPreview = String(req.body.preview || "").trim();
+        if (!isSafePreview(nextPreview)) {
+          res.status(400).json({ error: "Некорректный путь превью." });
+          return;
+        }
+        if (nextPreview !== existing.preview) {
+          await removeUploadIfNeeded(existing.preview);
+        }
+        preview = nextPreview;
+      }
+
+      const resource = {
+        ...existing,
+        id: currentId,
+        title: fields.title,
+        description: fields.description,
+        url: fields.url,
+        preview,
+        detailsHtml: buildDetailsHtml(fields.details),
+      };
+
+      resources[index] = resource;
+      await writeResources(resources);
+      res.json(resource);
+    } catch (error) {
+      res.status(500).json({ error: `Не удалось обновить ресурс: ${error.message}` });
     }
   });
 });
@@ -269,11 +357,7 @@ app.delete("/api/resources/:id", requireAdmin, async (req, res) => {
     }
 
     await writeResources(next);
-
-    if (target?.preview && target.preview.startsWith("assets/uploads/")) {
-      const iconPath = path.join(ROOT, target.preview);
-      await fsp.unlink(iconPath).catch(() => {});
-    }
+    await removeUploadIfNeeded(target?.preview);
 
     res.json({ ok: true, id });
   } catch (error) {

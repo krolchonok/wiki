@@ -17,11 +17,18 @@ const adminLoginBtn = document.getElementById("admin-login-btn");
 const adminLoginError = document.getElementById("admin-login-error");
 const adminForm = document.getElementById("admin-form");
 const adminFormStatus = document.getElementById("admin-form-status");
+const adminFormMode = document.getElementById("admin-form-mode");
 const adminCustomList = document.getElementById("admin-custom-list");
 const adminRefreshBtn = document.getElementById("admin-refresh");
+const adminSubmitBtn = document.getElementById("admin-submit");
+const adminCancelEditBtn = document.getElementById("admin-cancel-edit");
+const resourceIdInput = document.getElementById("resource-id");
+const resourceEditIdInput = document.getElementById("resource-edit-id");
+const resourcePreviewSelect = document.getElementById("resource-preview");
 
 let allResources = [];
 let adminPassword = "";
+let editingId = "";
 
 function setProgress(value) {
   const safeValue = Math.max(0, Math.min(100, value));
@@ -203,6 +210,78 @@ function closeAdminModal() {
   adminModal.setAttribute("aria-hidden", "true");
 }
 
+function detailsHtmlToText(html) {
+  if (!html) {
+    return "";
+  }
+  const doc = new DOMParser().parseFromString(html, "text/html");
+  const paragraphs = Array.from(doc.querySelectorAll("p"))
+    .map((node) => node.textContent.trim())
+    .filter(Boolean);
+  if (paragraphs.length) {
+    return paragraphs.join("\n");
+  }
+  return (doc.body?.textContent || "").trim();
+}
+
+function ensurePreviewOption(preview) {
+  if (!preview || !resourcePreviewSelect) {
+    return;
+  }
+  const exists = Array.from(resourcePreviewSelect.options).some((option) => option.value === preview);
+  if (!exists) {
+    const option = document.createElement("option");
+    option.value = preview;
+    option.textContent = preview.startsWith("assets/uploads/") ? "текущая загруженная" : preview;
+    resourcePreviewSelect.appendChild(option);
+  }
+  resourcePreviewSelect.value = preview;
+}
+
+function setEditMode(resource) {
+  editingId = resource?.id || "";
+  if (resourceEditIdInput) {
+    resourceEditIdInput.value = editingId;
+  }
+
+  if (!editingId) {
+    adminSubmitBtn.textContent = "Добавить";
+    adminCancelEditBtn.hidden = true;
+    adminFormMode.hidden = true;
+    resourceIdInput.readOnly = false;
+    return;
+  }
+
+  adminSubmitBtn.textContent = "Сохранить";
+  adminCancelEditBtn.hidden = false;
+  adminFormMode.hidden = false;
+  adminFormMode.textContent = `Редактирование: ${resource.title} (${resource.id})`;
+  resourceIdInput.readOnly = true;
+  resourceIdInput.value = resource.id;
+  adminForm.elements.title.value = resource.title || "";
+  adminForm.elements.description.value = resource.description || "";
+  adminForm.elements.url.value = resource.url || "";
+  adminForm.elements.details.value = detailsHtmlToText(resource.detailsHtml);
+  adminForm.elements.icon.value = "";
+  ensurePreviewOption(resource.preview || "assets/wiki.svg");
+  adminFormStatus.textContent = "";
+  resourceIdInput.focus();
+}
+
+function clearEditMode({ resetForm = true } = {}) {
+  editingId = "";
+  if (resourceEditIdInput) {
+    resourceEditIdInput.value = "";
+  }
+  adminSubmitBtn.textContent = "Добавить";
+  adminCancelEditBtn.hidden = true;
+  adminFormMode.hidden = true;
+  resourceIdInput.readOnly = false;
+  if (resetForm) {
+    adminForm.reset();
+  }
+}
+
 function renderAdminList() {
   if (!adminCustomList) {
     return;
@@ -221,9 +300,25 @@ function renderAdminList() {
   allResources.forEach((resource) => {
     const item = document.createElement("li");
     item.className = "admin-list-item";
+    if (editingId === resource.id) {
+      item.classList.add("is-editing");
+    }
 
     const label = document.createElement("span");
     label.textContent = `${resource.title} (${resource.id})`;
+
+    const actions = document.createElement("div");
+    actions.className = "admin-list-actions";
+
+    const editBtn = document.createElement("button");
+    editBtn.className = "win-btn";
+    editBtn.type = "button";
+    editBtn.textContent = "Изменить";
+    editBtn.disabled = !adminPassword;
+    editBtn.addEventListener("click", () => {
+      setEditMode(resource);
+      renderAdminList();
+    });
 
     const removeBtn = document.createElement("button");
     removeBtn.className = "win-btn";
@@ -241,6 +336,9 @@ function renderAdminList() {
             headers: adminHeaders(),
           }),
         );
+        if (editingId === resource.id) {
+          clearEditMode();
+        }
         adminFormStatus.textContent = `Удалён ресурс: ${resource.id}`;
         await loadResources({ quiet: true });
       } catch (error) {
@@ -248,7 +346,8 @@ function renderAdminList() {
       }
     });
 
-    item.append(label, removeBtn);
+    actions.append(editBtn, removeBtn);
+    item.append(label, actions);
     adminCustomList.appendChild(item);
   });
 }
@@ -291,7 +390,8 @@ adminForm.addEventListener("submit", async (event) => {
   }
 
   const formData = new FormData(adminForm);
-  formData.set("id", slugifyId(formData.get("id")));
+  const id = editingId || slugifyId(formData.get("id"));
+  formData.set("id", id);
   formData.set("title", String(formData.get("title") || "").trim());
   formData.set("description", String(formData.get("description") || "").trim());
   formData.set("url", String(formData.get("url") || "").trim());
@@ -305,19 +405,32 @@ adminForm.addEventListener("submit", async (event) => {
   adminFormStatus.textContent = "Сохранение...";
 
   try {
-    const created = await parseJsonResponse(
-      await fetch("/api/resources", {
-        method: "POST",
+    const endpoint = editingId
+      ? `/api/resources/${encodeURIComponent(editingId)}`
+      : "/api/resources";
+    const method = editingId ? "PUT" : "POST";
+    const saved = await parseJsonResponse(
+      await fetch(endpoint, {
+        method,
         headers: adminHeaders(),
         body: formData,
       }),
     );
-    adminForm.reset();
-    adminFormStatus.textContent = `Добавлен ресурс: ${created.title}`;
+    const wasEdit = method === "PUT";
+    clearEditMode();
+    adminFormStatus.textContent = wasEdit
+      ? `Сохранён ресурс: ${saved.title}`
+      : `Добавлен ресурс: ${saved.title}`;
     await loadResources({ quiet: true });
   } catch (error) {
     adminFormStatus.textContent = error.message;
   }
+});
+
+adminCancelEditBtn.addEventListener("click", () => {
+  clearEditMode();
+  adminFormStatus.textContent = "Редактирование отменено.";
+  renderAdminList();
 });
 
 adminRefreshBtn.addEventListener("click", async () => {
