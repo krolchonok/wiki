@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Wiki</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <main class="window" aria-label="Список ресурсов">
+    <header class="title-bar">
+      <span>Wiki</span>
+      <button id="admin-open" class="win-btn title-admin-btn" type="button">Админ</button>
+    </header>
+
+    <section class="panel info">
+      <p id="status-text">Загрузка списка ресурсов...</p>
+      <div class="progress-outer" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+        <div class="progress-inner" id="progress-inner"></div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div id="resources-grid" class="resources-grid" aria-live="polite"></div>
+    </section>
+  </main>
+
+  <div id="details-modal" class="modal-layer" aria-hidden="true">
+    <section class="modal-window" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+      <header class="modal-titlebar">
+        <span id="modal-title">Подробная информация</span>
+        <button id="modal-close" class="win-btn modal-close-btn" type="button" aria-label="Закрыть">X</button>
+      </header>
+      <div class="modal-body">
+        <div id="details-content" class="details-content" aria-live="polite"></div>
+      </div>
+    </section>
+  </div>
+
+  <div id="admin-modal" class="modal-layer" aria-hidden="true">
+    <section class="modal-window admin-window" role="dialog" aria-modal="true" aria-labelledby="admin-title">
+      <header class="modal-titlebar">
+        <span id="admin-title">Админ меню</span>
+        <button id="admin-close" class="win-btn modal-close-btn" type="button" aria-label="Закрыть">X</button>
+      </header>
+      <div class="modal-body admin-body">
+        <section id="admin-login" class="admin-section">
+          <p class="admin-hint">Введите пароль для доступа к управлению ресурсами.</p>
+          <label class="admin-label" for="admin-password">Пароль</label>
+          <input id="admin-password" class="admin-input" type="password" autocomplete="current-password">
+          <p id="admin-login-error" class="admin-error" hidden>Неверный пароль.</p>
+          <div class="admin-actions">
+            <button id="admin-login-btn" class="win-btn" type="button">Войти</button>
+          </div>
+        </section>
+
+        <section id="admin-panel" class="admin-section" hidden>
+          <p class="admin-hint">Новые ресурсы сохраняются в общий <code>data/resources.json</code> на сервере и видны всем.</p>
+
+          <form id="admin-form" class="admin-form">
+            <label class="admin-label" for="resource-id">ID (латиница)</label>
+            <input id="resource-id" class="admin-input" name="id" type="text" required pattern="[a-z0-9_-]+" placeholder="my-tool">
+
+            <label class="admin-label" for="resource-title">Название</label>
+            <input id="resource-title" class="admin-input" name="title" type="text" required maxlength="80">
+
+            <label class="admin-label" for="resource-description">Описание</label>
+            <textarea id="resource-description" class="admin-input admin-textarea" name="description" rows="2" required maxlength="200"></textarea>
+
+            <label class="admin-label" for="resource-url">URL</label>
+            <input id="resource-url" class="admin-input" name="url" type="url" required placeholder="https://example.com/">
+
+            <label class="admin-label" for="resource-icon">Иконка (файл)</label>
+            <input id="resource-icon" class="admin-input" name="icon" type="file" accept="image/png,image/jpeg,image/svg+xml,image/webp,image/gif,.png,.jpg,.jpeg,.svg,.webp,.gif">
+
+            <label class="admin-label" for="resource-preview">Или стандартная</label>
+            <select id="resource-preview" class="admin-input" name="preview">
+              <option value="assets/wiki.svg">wiki.svg</option>
+              <option value="assets/github.svg">github.svg</option>
+              <option value="assets/mdn.svg">mdn.svg</option>
+              <option value="assets/archive.svg">archive.svg</option>
+            </select>
+
+            <label class="admin-label" for="resource-details">Подробности (текст)</label>
+            <textarea id="resource-details" class="admin-input admin-textarea" name="details" rows="4" placeholder="Назначение: ..."></textarea>
+
+            <p id="admin-form-status" class="admin-status" aria-live="polite"></p>
+
+            <div class="admin-actions">
+              <button class="win-btn" type="submit">Добавить</button>
+              <button id="admin-refresh" class="win-btn" type="button">Обновить список</button>
+            </div>
+          </form>
+
+          <div class="admin-list-wrap">
+            <p class="admin-label">Все ресурсы</p>
+            <ul id="admin-custom-list" class="admin-list"></ul>
+          </div>
+        </section>
+      </div>
+    </section>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

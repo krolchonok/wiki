@@ -1,0 +1,11 @@
+node_modules/
+.env
+*.log
+.DS_Store
+
+# Рабочие данные — не коммитить
+data/resources.json
+details/*
+!details/.gitkeep
+assets/uploads/*
+!assets/uploads/.gitkeep
