@@ -67,9 +67,15 @@ function previewUrl(preview) {
   return `/${value.replace(/^\/+/, "")}`;
 }
 
+function requiresAuth(resource) {
+  return Boolean(resource?.requiresAuth);
+}
+
 function createCard(resource) {
   const card = document.createElement("article");
-  card.className = "resource-card";
+  const needsAuth = requiresAuth(resource);
+  card.className = `resource-card ${needsAuth ? "resource-card-auth" : "resource-card-open"}`;
+  card.title = needsAuth ? "Требуется авторизация" : "Без авторизации";
 
   const previewWrap = document.createElement("div");
   previewWrap.className = "preview-wrap";
@@ -279,6 +285,7 @@ function setEditMode(resource) {
   adminForm.elements.url.value = resource.url || "";
   adminForm.elements.details.value = detailsHtmlToText(resource.detailsHtml);
   adminForm.elements.icon.value = "";
+  adminForm.elements.requiresAuth.checked = requiresAuth(resource);
   ensurePreviewOption(resource.preview || "assets/wiki.svg");
   adminFormStatus.textContent = "";
   resourceIdInput.focus();
@@ -321,7 +328,13 @@ function renderAdminList() {
     }
 
     const label = document.createElement("span");
-    label.textContent = `${resource.title} (${resource.id})`;
+    const authMark = requiresAuth(resource) ? " [auth]" : "";
+    label.textContent = `${resource.title} (${resource.id})${authMark}`;
+    if (requiresAuth(resource)) {
+      item.classList.add("admin-list-item-auth");
+    } else {
+      item.classList.add("admin-list-item-open");
+    }
 
     const actions = document.createElement("div");
     actions.className = "admin-list-actions";
@@ -415,6 +428,7 @@ adminForm.addEventListener("submit", async (event) => {
   formData.set("description", String(formData.get("description") || "").trim());
   formData.set("url", String(formData.get("url") || "").trim());
   formData.set("details", String(formData.get("details") || "").trim());
+  formData.set("requiresAuth", adminForm.elements.requiresAuth.checked ? "true" : "false");
 
   const icon = formData.get("icon");
   if (!(icon instanceof File) || !icon.size) {

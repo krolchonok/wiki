@@ -22,6 +22,16 @@
 
     <section class="panel">
       <div id="resources-grid" class="resources-grid" aria-live="polite"></div>
+      <div class="auth-legend" aria-label="Легенда авторизации">
+        <span class="auth-legend-item auth-legend-open">
+          <span class="auth-legend-swatch" aria-hidden="true"></span>
+          Без авторизации
+        </span>
+        <span class="auth-legend-item auth-legend-auth">
+          <span class="auth-legend-swatch" aria-hidden="true"></span>
+          Требуется авторизация
+        </span>
+      </div>
     </section>
   </main>
 
@@ -85,6 +95,11 @@
 
             <label class="admin-label" for="resource-details">Подробности (текст)</label>
             <textarea id="resource-details" class="admin-input admin-textarea" name="details" rows="4" placeholder="Назначение: ..."></textarea>
+
+            <label class="admin-check-label" for="resource-requires-auth">
+              <input id="resource-requires-auth" name="requiresAuth" type="checkbox" value="true">
+              Требуется авторизация
+            </label>
 
             <p id="admin-form-mode" class="admin-hint" hidden>Режим редактирования</p>
             <p id="admin-form-status" class="admin-status" aria-live="polite"></p>

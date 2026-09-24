@@ -195,7 +195,7 @@ async function readResources() {
   if (!Array.isArray(data)) {
     throw new Error("resources.json must be an array");
   }
-  return data;
+  return data.map(normalizeResource);
 }
 
 async function writeResources(resources) {
@@ -252,6 +252,27 @@ function resolveImageExt(file) {
   return null;
 }
 
+function parseRequiresAuth(value) {
+  if (typeof value === "boolean") {
+    return value;
+  }
+  if (value == null || value === "") {
+    return false;
+  }
+  const normalized = String(value).trim().toLowerCase();
+  return normalized === "1" || normalized === "true" || normalized === "on" || normalized === "yes";
+}
+
+function normalizeResource(resource) {
+  if (!resource || typeof resource !== "object") {
+    return resource;
+  }
+  return {
+    ...resource,
+    requiresAuth: parseRequiresAuth(resource.requiresAuth),
+  };
+}
+
 function readResourceFields(body) {
   const id = slugifyId(body?.id);
   const title = String(body?.title || "").trim();
@@ -259,7 +280,8 @@ function readResourceFields(body) {
   const url = String(body?.url || "").trim();
   const preview = String(body?.preview || "assets/wiki.svg").trim();
   const details = String(body?.details || "").trim();
-  return { id, title, description, url, preview, details };
+  const requiresAuth = parseRequiresAuth(body?.requiresAuth);
+  return { id, title, description, url, preview, details, requiresAuth };
 }
 
 function validateResourceFields({ id, title, description, url }) {
@@ -355,6 +377,7 @@ app.post("/api/resources", requireAdmin, (req, res) => {
         preview,
         detailsPage: "",
         detailsHtml: buildDetailsHtml(fields.details),
+        requiresAuth: fields.requiresAuth,
         custom: true,
       };
 
@@ -424,6 +447,7 @@ app.put("/api/resources/:id", requireAdmin, (req, res) => {
         url: fields.url,
         preview,
         detailsHtml: buildDetailsHtml(fields.details),
+        requiresAuth: fields.requiresAuth,
       };
 
       resources[index] = resource;
